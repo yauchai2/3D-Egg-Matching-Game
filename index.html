@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D Easter Egg Match</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="reference-panel">
+        <div class="reference-stage-wrap">
+          <canvas id="referenceCanvas" width="340" height="420" aria-label="Reference egg"></canvas>
+        </div>
+        <p class="reference-label">左側是目標角度參考圖</p>
+
+        <div class="instruction">
+          Match this view!<br />
+          <span>Single-finger drag: rotate. Two-finger drag: move. Pinch: zoom.</span>
+        </div>
+
+        <div class="stats">
+          <div class="stat-item">
+            <span>Match</span>
+            <strong id="matchValue">0%</strong>
+          </div>
+          <div class="stat-item">
+            <span>Best</span>
+            <strong id="bestValue">0%</strong>
+          </div>
+        </div>
+
+        <button id="newTargetBtn" class="action-btn">New Target Angle</button>
+      </aside>
+
+      <main class="game-panel">
+        <div class="grid-bg"></div>
+        <canvas id="gameCanvas" aria-label="Interactive egg"></canvas>
+        <div class="mode-switch" role="group" aria-label="Drag mode">
+          <button id="rotateModeBtn" class="mode-btn active">Rotate</button>
+          <button id="moveModeBtn" class="mode-btn">Move</button>
+        </div>
+        <div class="top-right-ui">
+          <button id="resetBtn" class="icon-btn" aria-label="Reset player egg">↺</button>
+        </div>
+        <div id="statusBanner" class="status-banner" aria-live="polite"></div>
+      </main>
+    </div>
+
+    <script src="./vendor/three.min.js"></script>
+    <script src="./main.js"></script>
+  </body>
+</html>
