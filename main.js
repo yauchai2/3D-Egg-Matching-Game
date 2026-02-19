@@ -1,19 +1,19 @@
 const gameCanvas = document.getElementById("gameCanvas");
 const referenceCanvas = document.getElementById("referenceCanvas");
 const matchValue = document.getElementById("matchValue");
-const bestValue = document.getElementById("bestValue");
-const statusBanner = document.getElementById("statusBanner");
-const newTargetBtn = document.getElementById("newTargetBtn");
-const resetBtn = document.getElementById("resetBtn");
-const rotateModeBtn = document.getElementById("rotateModeBtn");
-const moveModeBtn = document.getElementById("moveModeBtn");
+const matchFill = document.getElementById("matchFill");
+const targetMarker = document.getElementById("targetMarker");
+const timerValue = document.getElementById("timerValue");
 
 const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 const degToRad = (d) => (d * Math.PI) / 180;
 
-let bestMatch = 0;
 let hasCelebrated = false;
 let isAdvancingRound = false;
+let timerEnded = false;
+let timerStart = performance.now();
+const TIMER_TOTAL_SECONDS = 179;
+const TARGET_MATCH_PERCENT = 80;
 const dropAnim = {
   active: false,
   start: 0,
@@ -24,7 +24,6 @@ const dropAnim = {
 const pointerState = {
   dragging: false,
   mode: "rotate",
-  manualMode: "rotate",
   lastX: 0,
   lastY: 0,
 };
@@ -46,6 +45,18 @@ const playerState = {
   posBounds: 0.85,
   scaleBounds: [0.72, 1.35],
 };
+
+const keyboardState = {
+  ArrowUp: false,
+  ArrowDown: false,
+  ArrowLeft: false,
+  ArrowRight: false,
+  z: false,
+  x: false,
+};
+
+const KEYBOARD_ROTATE_STEP = 0.028;
+const KEYBOARD_SCALE_STEP = 0.006;
 
 function makeRenderer(canvas, alpha = true) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha });
@@ -527,7 +538,6 @@ function startDropInAnimation() {
 function setNewTarget() {
   hasCelebrated = false;
   isAdvancingRound = false;
-  statusBanner.textContent = "Keep rotating to match!";
   startDropInAnimation();
 
   const euler = new THREE.Euler(
@@ -538,16 +548,12 @@ function setNewTarget() {
   );
   targetState.quat.setFromEuler(euler);
 
-  targetState.pos.set(
-    THREE.MathUtils.randFloatSpread(0.12),
-    THREE.MathUtils.randFloat(-0.08, 0.1),
-    0
-  );
+  targetState.pos.set(0, 0, 0);
 
   targetState.scale = THREE.MathUtils.randFloat(0.92, 1.08);
 
   refEgg.quaternion.copy(targetState.quat);
-  refEgg.position.set(targetState.pos.x * 0.55, targetState.pos.y * 0.55, 0);
+  refEgg.position.set(0, 0, 0);
   refEgg.scale.setScalar(targetState.scale * REFERENCE_VISUAL_SCALE);
 
 }
@@ -562,13 +568,10 @@ function computeMatchScore() {
   const angle = playerEgg.quaternion.angleTo(targetState.quat);
   const angleScore = clamp(1 - angle / degToRad(65), 0, 1);
 
-  const posDist = playerEgg.position.distanceTo(targetState.pos);
-  const posScore = clamp(1 - posDist / 0.55, 0, 1);
-
   const scaleDist = Math.abs(playerEgg.scale.x - targetState.scale);
   const scaleScore = clamp(1 - scaleDist / 0.45, 0, 1);
 
-  return angleScore * 0.7 + posScore * 0.2 + scaleScore * 0.1;
+  return angleScore * 0.85 + scaleScore * 0.15;
 }
 
 function updateHUD() {
@@ -576,30 +579,38 @@ function updateHUD() {
   const pct = Math.round(score * 100);
   matchValue.textContent = `${pct}%`;
 
-  if (pct > bestMatch) {
-    bestMatch = pct;
-    bestValue.textContent = `${bestMatch}%`;
-  }
+  matchFill.style.width = `${pct}%`;
 
-  if (pct >= 80 && !hasCelebrated) {
+  if (pct >= TARGET_MATCH_PERCENT && !hasCelebrated) {
     hasCelebrated = true;
-    statusBanner.textContent = "Great match! Next angle...";
-  } else if (!hasCelebrated) {
-    statusBanner.textContent = pct >= 70 ? "Very close! Fine-tune it." : "Keep rotating to match!";
   }
 
-  if (pct >= 80 && !isAdvancingRound) {
+  if (pct >= TARGET_MATCH_PERCENT && !isAdvancingRound) {
     isAdvancingRound = true;
     setTimeout(() => {
+      if (timerEnded) return;
       setNewTarget();
       resetPlayer();
     }, 700);
   }
+}
 
-  const glow = clamp((pct - 70) / 30, 0, 1);
-  statusBanner.style.background = `rgba(${Math.round(31 + 30 * glow)}, ${Math.round(35 + 120 * glow)}, ${Math.round(
-    40 + 38 * glow
-  )}, 0.74)`;
+function formatRemainingTime(totalSeconds) {
+  const mm = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+  const ss = String(totalSeconds % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+function updateTimer(now) {
+  if (timerEnded) return;
+  const elapsedSec = Math.floor((now - timerStart) / 1000);
+  const remaining = Math.max(0, TIMER_TOTAL_SECONDS - elapsedSec);
+  timerValue.textContent = formatRemainingTime(remaining);
+
+  if (remaining <= 0) {
+    timerEnded = true;
+    clearKeyboardState();
+  }
 }
 
 function resize() {
@@ -643,7 +654,7 @@ function midpoint(a, b) {
 }
 
 function onPointerDown(e) {
-  if (dropAnim.active) return;
+  if (dropAnim.active || timerEnded) return;
   if (!pointerToCanvas(e, gameCanvas).inBounds) return;
   if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 2) return;
 
@@ -658,10 +669,9 @@ function onPointerDown(e) {
     const [p1, p2] = pointers;
     gestureState.lastCenter = midpoint(p1, p2);
     gestureState.lastDistance = distanceBetween(p1, p2);
-    pointerState.mode = "translate";
   } else {
     gestureState.isMultiTouch = false;
-    pointerState.mode = e.shiftKey || e.button === 2 ? "translate" : pointerState.manualMode;
+    pointerState.mode = "rotate";
     pointerState.lastX = e.clientX;
     pointerState.lastY = e.clientY;
   }
@@ -677,13 +687,6 @@ function onPointerMove(e) {
     const [p1, p2] = pointers;
     const center = midpoint(p1, p2);
     const dist = distanceBetween(p1, p2);
-
-    if (gestureState.lastCenter) {
-      const dx = center.x - gestureState.lastCenter.x;
-      const dy = center.y - gestureState.lastCenter.y;
-      playerEgg.position.x = clamp(playerEgg.position.x + dx * 0.0019, -playerState.posBounds, playerState.posBounds);
-      playerEgg.position.y = clamp(playerEgg.position.y - dy * 0.0019, -playerState.posBounds, playerState.posBounds);
-    }
 
     if (gestureState.lastDistance > 0) {
       const pinchDelta = dist - gestureState.lastDistance;
@@ -701,15 +704,10 @@ function onPointerMove(e) {
   pointerState.lastX = e.clientX;
   pointerState.lastY = e.clientY;
 
-  if (pointerState.mode === "rotate") {
-    const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.0098);
-    const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * 0.0098);
-    playerEgg.quaternion.multiplyQuaternions(qYaw, playerEgg.quaternion);
-    playerEgg.quaternion.multiplyQuaternions(qPitch, playerEgg.quaternion);
-  } else {
-    playerEgg.position.x = clamp(playerEgg.position.x + dx * 0.0022, -playerState.posBounds, playerState.posBounds);
-    playerEgg.position.y = clamp(playerEgg.position.y - dy * 0.0022, -playerState.posBounds, playerState.posBounds);
-  }
+  const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.0098);
+  const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), dy * 0.0098);
+  playerEgg.quaternion.multiplyQuaternions(qYaw, playerEgg.quaternion);
+  playerEgg.quaternion.multiplyQuaternions(qPitch, playerEgg.quaternion);
 }
 
 function onPointerUp(e) {
@@ -731,7 +729,7 @@ function onPointerUp(e) {
     pointerState.lastX = only.x;
     pointerState.lastY = only.y;
     gestureState.isMultiTouch = false;
-    pointerState.mode = pointerState.manualMode;
+    pointerState.mode = "rotate";
     return;
   }
 
@@ -742,12 +740,74 @@ function onPointerUp(e) {
 }
 
 function onWheel(e) {
-  if (dropAnim.active) return;
+  if (dropAnim.active || timerEnded) return;
   if (!pointerToCanvas(e, gameCanvas).inBounds) return;
 
   e.preventDefault();
   const s = clamp(playerEgg.scale.x - e.deltaY * 0.0008, playerState.scaleBounds[0], playerState.scaleBounds[1]);
   playerEgg.scale.setScalar(s);
+}
+
+function isKeyboardControlKey(key) {
+  return (
+    key === "ArrowUp" ||
+    key === "ArrowDown" ||
+    key === "ArrowLeft" ||
+    key === "ArrowRight" ||
+    key === "z" ||
+    key === "x" ||
+    key === "Z" ||
+    key === "X"
+  );
+}
+
+function onKeyDown(e) {
+  if (!isKeyboardControlKey(e.key)) return;
+  if (dropAnim.active || timerEnded) return;
+
+  e.preventDefault();
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  keyboardState[key] = true;
+}
+
+function onKeyUp(e) {
+  if (!isKeyboardControlKey(e.key)) return;
+
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  keyboardState[key] = false;
+}
+
+function clearKeyboardState() {
+  keyboardState.ArrowUp = false;
+  keyboardState.ArrowDown = false;
+  keyboardState.ArrowLeft = false;
+  keyboardState.ArrowRight = false;
+  keyboardState.z = false;
+  keyboardState.x = false;
+}
+
+function applyKeyboardControls() {
+  if (dropAnim.active || timerEnded) return;
+
+  let yaw = 0;
+  let pitch = 0;
+  if (keyboardState.ArrowLeft) yaw -= KEYBOARD_ROTATE_STEP;
+  if (keyboardState.ArrowRight) yaw += KEYBOARD_ROTATE_STEP;
+  if (keyboardState.ArrowUp) pitch -= KEYBOARD_ROTATE_STEP;
+  if (keyboardState.ArrowDown) pitch += KEYBOARD_ROTATE_STEP;
+
+  if (yaw !== 0 || pitch !== 0) {
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+    playerEgg.quaternion.multiplyQuaternions(qYaw, playerEgg.quaternion);
+    playerEgg.quaternion.multiplyQuaternions(qPitch, playerEgg.quaternion);
+  }
+
+  if (keyboardState.z || keyboardState.x) {
+    const scaleDelta = (keyboardState.x ? 1 : 0) - (keyboardState.z ? 1 : 0);
+    const s = clamp(playerEgg.scale.x + scaleDelta * KEYBOARD_SCALE_STEP, playerState.scaleBounds[0], playerState.scaleBounds[1]);
+    playerEgg.scale.setScalar(s);
+  }
 }
 
 function animate(now = 0) {
@@ -763,6 +823,8 @@ function animate(now = 0) {
     }
   }
 
+  updateTimer(now);
+  applyKeyboardControls();
   updateHUD();
 
   gameRenderer.render(gameScene, gameCamera);
@@ -781,29 +843,13 @@ gameCanvas.addEventListener("contextmenu", (e) => {
   }
 });
 gameCanvas.addEventListener("wheel", onWheel, { passive: false });
-
-newTargetBtn.addEventListener("click", () => {
-  setNewTarget();
-  resetPlayer();
-});
-
-resetBtn.addEventListener("click", () => {
-  resetPlayer();
-});
-
-rotateModeBtn.addEventListener("click", () => {
-  pointerState.manualMode = "rotate";
-  rotateModeBtn.classList.add("active");
-  moveModeBtn.classList.remove("active");
-});
-
-moveModeBtn.addEventListener("click", () => {
-  pointerState.manualMode = "translate";
-  moveModeBtn.classList.add("active");
-  rotateModeBtn.classList.remove("active");
-});
+window.addEventListener("keydown", onKeyDown);
+window.addEventListener("keyup", onKeyUp);
+window.addEventListener("blur", clearKeyboardState);
 
 applyEggTexture("spring");
+timerValue.textContent = formatRemainingTime(TIMER_TOTAL_SECONDS);
+targetMarker.style.left = `calc(${TARGET_MATCH_PERCENT}% - 5px)`;
 setNewTarget();
 resetPlayer();
 resize();

@@ -1,0 +1,21 @@
+Original prompt: 加入可以用鍵盤控制的功能。鍵盤上下左右鍵控制方向，Z和X鍵控制縮放。
+
+- Initialized progress log.
+- Found existing controls: touch drag for rotation/translation and wheel/pinch for scaling in `main.js`.
+- Added keyboard controls in `main.js`:
+  - Arrow keys move egg position on X/Y axes.
+  - `Z` scales down and `X` scales up.
+  - Added keyup/keydown/blur handling and prevent default for control keys.
+- Updated instructions text in `index.html` to mention Arrow and Z/X controls.
+- Ran `web_game_playwright_client.js` against local server with arrow-key actions; screenshots generated at `output/web-game-keyboard` and no client error logs were produced.
+- Attempted a dedicated `Z/X` automation with direct Playwright script; environment hit WebGL-context creation errors (automation limitation in that run).
+- Adjusted keyboard behavior per user clarification: Arrow keys now rotate the egg (yaw/pitch) instead of translating position.
+- Kept `Z/X` keyboard zoom controls unchanged.
+- Updated instruction text to `Arrow keys: rotate`.
+- Reworked UI to match provided mockup style:
+  - Left sidebar with back button, level title, reference egg, instruction heading, and guideline card.
+  - Removed old mode switch, reset button, best stat card, and new target button UI.
+  - Added top-right timer card and bottom match progress bar with target marker.
+- Updated gameplay HUD bindings in `main.js` for new UI elements (`matchFill`, `timerValue`, `targetMarker`).
+- Simplified interaction to rotate + zoom emphasis (removed drag-translate behavior from active controls flow).
+- Matching logic now scores rotation+scale only; reference egg is centered to align with new UI intent.
